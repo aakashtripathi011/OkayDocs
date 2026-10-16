@@ -6,6 +6,7 @@ import { createVerificationResult } from "@/lib/verification/result";
 import { saveVerificationResult } from "@/lib/verification/store";
 import { analyzePassportMRZ } from "@/lib/verification/mrz.mjs";
 import { analyzeTampering } from "@/lib/verification/tampering.mjs";
+import PassportCropModal from "@/components/PassportCropModal";
 
 const STEPS = [
   { id: "extract", label: "Extract", hint: "Read MRZ and printed text" },
@@ -268,6 +269,8 @@ export default function CheckDocumentPage() {
   const [passportFile, setPassportFile] = useState(null);
   const [passportUrl, setPassportUrl] = useState(null);
   const [passportError, setPassportError] = useState(null);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [croppedPassportFace, setCroppedPassportFace] = useState(null);
   const [dragging, setDragging] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -305,17 +308,23 @@ export default function CheckDocumentPage() {
       setPassportError(`Image is larger than ${MAX_FILE_MB} MB. Use a smaller scan.`);
       return;
     }
+
     setPassportError(null);
     setFormError(null);
     setPassportFile(file);
     setPassportUrl(URL.createObjectURL(file));
+    setCroppedPassportFace(null);
     setStatuses(idleStatuses());
+    setCropModalOpen(true);
   }
 
   function clearPassport() {
+    setCropModalOpen(false);
     setPassportFile(null);
     setPassportUrl(null);
+    setCroppedPassportFace(null);
     setPassportError(null);
+    setFormError(null);
     setStatuses(idleStatuses());
   }
 
@@ -356,10 +365,11 @@ export default function CheckDocumentPage() {
 
   async function runCheck() {
     console.log("========== VERIFICATION START ==========");
-    if (!passportFile || !selfie) {
-      setFormError("Add a passport image and a selfie before running the check.");
+    if (!passportFile || !croppedPassportFace || !selfie) {
+      setFormError("Upload a passport, confirm its portrait crop, and capture a selfie before running the check.");
       console.warn("[VERIFY] Missing input", {
         passportPresent: Boolean(passportFile),
+        croppedPortraitPresent: Boolean(croppedPassportFace),
         selfiePresent: Boolean(selfie),
       });
       return;
@@ -450,7 +460,7 @@ for (const step of STEPS) {
     }
   }
 
-  const ready = Boolean(passportFile && selfie);
+  const ready = Boolean(passportFile && croppedPassportFace && selfie);
   const completedCount = Object.values(statuses).filter((status) =>
     ["done", "suspicious", "inconclusive"].includes(status)
   ).length;
@@ -595,7 +605,17 @@ for (const step of STEPS) {
               {running ? "Verification running..." : ready ? "Start verification" : "Add both inputs to begin"}<span aria-hidden="true" className="text-[20px]">→</span>
             </button>
             <div className="text-[12px] leading-[1.7] text-[#b8b8b8]">
-              {!ready && !running ? !passportFile && !selfie ? "Add the passport image and capture a selfie to continue." : !passportFile ? "A passport image is still required." : "A live selfie is still required." : running ? "The verification sequence is in progress." : "Both inputs are ready for the verification sequence."}
+              {!ready && !running
+                ? !passportFile
+                  ? "Upload the passport image to continue."
+                  : !croppedPassportFace
+                    ? "Confirm the passport portrait crop to continue."
+                    : !selfie
+                      ? "Capture a selfie to continue."
+                      : "Complete the required inputs to continue."
+                : running
+                  ? "The verification sequence is in progress."
+                  : "Both inputs and the portrait crop are ready."}
             </div>
             {formError && <p role="alert" className="text-[12px] leading-[1.7] text-[#ffd19c] sm:ml-auto">! {formError}</p>}
           </div>
@@ -605,6 +625,18 @@ for (const step of STEPS) {
           <span>OkayDocs / Document integrity</span><span>Local-first interface / Verification preview</span><span className="text-[#61e294]">● Privacy boundary active</span>
         </footer>
       </main>
+
+      {cropModalOpen && passportUrl && (
+        <PassportCropModal
+          image={passportUrl}
+          onCancel={clearPassport}
+          onConfirm={(croppedImage) => {
+            setCroppedPassportFace(croppedImage);
+            setCropModalOpen(false);
+            setFormError(null);
+          }}
+        />
+      )}
     </div>
   );
 }
